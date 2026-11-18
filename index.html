@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Systype step 0</title>
+  <style>
+    body { font: 14px/1.4 system-ui, sans-serif; margin: 16px; color: #111; background: #fff; }
+    .row { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; margin-bottom: 12px; }
+    label { display: flex; gap: 6px; align-items: center; }
+    output { min-width: 3em; font-variant-numeric: tabular-nums; }
+    canvas { display: block; max-width: 100%; border: 1px solid #ddd; }
+    #warn { color: #b00; }
+    #files a { margin-right: 16px; }
+  </style>
+</head>
+<body>
+  <h1>Systype step 0</h1>
+  <div class="row">
+    <input type="file" id="file" accept=".otf,.ttf,.woff">
+    <button id="sample">Load IBM Plex Sans</button>
+    <span id="info"></span>
+  </div>
+  <p id="warn"></p>
+  <div class="row">
+    <label>Column <input type="range" id="col" min="5" max="80" value="20"><output></output></label>
+    <label>Row <input type="range" id="row" min="5" max="80" value="20"><output></output></label>
+    <label>Skew <input type="range" id="skew" min="-30" max="30" value="0"><output></output></label>
+    <button id="fit">Fit to grid</button>
+    <label><input type="checkbox" id="orig" checked> Show original</label>
+  </div>
+  <canvas id="view"></canvas>
+  <div class="row" style="margin-top:12px">
+    <button id="export" disabled>Export</button>
+    <span id="status"></span>
+  </div>
+  <p id="files"></p>
+  <script type="module" src="./src/main.ts"></script>
+</body>
+</html>

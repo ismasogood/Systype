@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "export:test": "node scripts/export-test.ts"
   },
   "dependencies": {
     "opentype.js": "^2.0.0"
