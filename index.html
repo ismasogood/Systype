@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Systype step 0</title>
+  <style>body{color:#111;background:#fff;margin:16px;font:14px/1.4 system-ui,sans-serif}.row{flex-wrap:wrap;align-items:center;gap:12px 20px;margin-bottom:12px;display:flex}.row b{min-width:5.5em}label{align-items:center;gap:6px;display:flex}output{font-variant-numeric:tabular-nums;min-width:3em}input[type=number]{width:4.5em}canvas{cursor:crosshair;border:1px solid #ddd;max-width:100%;display:block}#warn{color:#b00}#files a{margin-right:16px}</style>
+  <script type="module" crossorigin src="./assets/index-Cxbfzfhu.js"></script>
+</head>
+<body>
+  <h1>Systype step 0</h1>
+  <div class="row">
+    <input type="file" id="file" accept=".otf,.ttf,.woff">
+    <button id="sample">Load IBM Plex Sans</button>
+    <span id="info"></span>
+  </div>
+  <p id="warn"></p>
+  <div class="row">
+    <b>Fit</b>
+    <label>Cell width <input type="range" class="fit" id="cellW" min="20" max="150" value="50"><output></output></label>
+    <label>Cell height <input type="range" class="fit" id="cellH" min="20" max="150" value="50"><output></output></label>
+    <label>Threshold % <input type="range" class="fit" id="threshold" min="5" max="95" value="50"><output></output></label>
+    <label>Smoothing <select class="fit" id="smooth">
+      <option value="off">Off</option>
+      <option value="triangle" selected>Triangles</option>
+      <option value="quarter">Quarter circles</option>
+    </select></label>
+    <label><input type="checkbox" id="orig" checked> Show original</label>
+  </div>
+  <div class="row">
+    <b>Axes</b>
+    <label>Weight <input type="range" class="axis" id="wght" min="100" max="900" value="400"><output></output></label>
+    <label>Width <input type="range" class="axis" id="wdth" min="100" max="150" value="100"><output></output></label>
+    <label>Slant <input type="range" class="axis" id="slnt" min="-12" max="0" value="0"><output></output></label>
+    <label>Roundness <input type="range" class="axis" id="ROND" min="0" max="100" value="0"><output></output></label>
+  </div>
+  <div class="row">
+    <b>Ranges</b>
+    <label>Module size at Thin % <input type="number" class="range" id="sizeMin" min="5" max="100" value="40"></label>
+    <label>at Black % <input type="number" class="range" id="sizeMax" min="5" max="120" value="100"></label>
+    <label>Widest % <input type="number" class="range" id="widthMax" min="100" max="300" value="150"></label>
+    <label>Most slant ° <input type="number" class="range" id="slantMax" min="0" max="30" value="12"></label>
+    <label>Most round % <input type="number" class="range" id="roundMax" min="0" max="100" value="100"></label>
+  </div>
+  <p>Click a cell to turn its module on or off. Changing a Fit setting refits and discards clicks.</p>
+  <canvas id="view"></canvas>
+  <div class="row" style="margin-top:12px">
+    <button id="export" disabled>Export</button>
+    <span id="status"></span>
+  </div>
+  <p id="files"></p>
+</body>
+</html>
