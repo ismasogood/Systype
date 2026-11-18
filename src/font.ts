@@ -1,5 +1,7 @@
 import opentype, { type Font, type Glyph } from 'opentype.js'
-import { buildGlyph, fitGlyph, notdef, type Contour, type Grid, type GridGlyph, type Pt } from './grid.ts'
+import type { Contour, Pt } from './geom.ts'
+import { buildGlyph, fitModules, notdef, type Axes, type GridGlyph, type Smooth } from './modules.ts'
+import { coverage } from './raster.ts'
 
 export const BASIC_LATIN = Array.from({ length: 95 }, (_, i) => String.fromCharCode(0x20 + i))
 
@@ -42,31 +44,78 @@ export function sourceContours(glyph: Glyph): Contour[] {
   return out
 }
 
-export type Fitted = { glyphs: GridGlyph[]; kern: [string, string, number][] } // kern in columns
+export type FitSettings = { cellW: number; cellH: number; threshold: number; smooth: Smooth }
+export type Fitted = { glyphs: GridGlyph[]; kern: [string, string, number][] } // kern in cells
 
-export function fitFont(src: Source, chars: string[], g: Grid): Fitted {
+export function fitFont(src: Source, chars: string[], s: FitSettings): Fitted {
   const f = src.font
   const have = chars.filter((c) => f.charToGlyphIndex(c) !== 0)
-  const glyphs = [notdef(g, f.tables.os2.sCapHeight)]
+  const glyphs = [notdef(s.cellW, s.cellH, f.tables.os2.sCapHeight)]
   for (const ch of have) {
     const gl = f.charToGlyph(ch)
-    glyphs.push(fitGlyph(gl.name, ch.codePointAt(0)!, gl.advanceWidth, sourceContours(gl), g))
+    const modules = fitModules(coverage(sourceContours(gl), s.cellW, s.cellH), s.threshold, s.smooth)
+    glyphs.push({ name: gl.name, unicode: ch.codePointAt(0)!, advCells: Math.round(gl.advanceWidth / s.cellW), modules })
   }
   const space = glyphs.find((x) => x.unicode === 0x20)
-  if (space) glyphs.push({ name: 'uni00A0', unicode: 0xa0, advCols: space.advCols, contours: [] })
+  if (space) glyphs.push({ name: 'uni00A0', unicode: 0xa0, advCells: space.advCells, modules: [] })
 
   const kern: Fitted['kern'] = []
   for (const a of have) for (const b of have) {
     const ga = f.charToGlyph(a), gb = f.charToGlyph(b)
-    const v = Math.round(f.getKerningValue(ga, gb) / g.col)
+    const v = Math.round(f.getKerningValue(ga, gb) / s.cellW)
     if (v !== 0) kern.push([ga.name, gb.name, v])
   }
   return { glyphs, kern }
 }
 
-// Everything the Python export needs. Each master is the same grid positions on a different grid.
-export function exportPayload(src: Source, fit: Fitted, masters: { wdth: number; grid: Grid }[], n: number) {
+// Axis ranges for export. size: module size at wght 100 and 900. widthMax: cell width factor at the
+// widest. slantMax: degrees of right lean at the most slanted. roundMax: 0 to 1.
+export type AxisRanges = { size: [number, number]; widthMax: number; slantMax: number; roundMax: number }
+
+type Loc = Record<string, number>
+
+export function axesAt(fit: FitSettings, r: AxisRanges, loc: Loc): Axes {
+  return {
+    cellW: fit.cellW * ((loc.wdth ?? 100) / 100),
+    cellH: fit.cellH,
+    size: r.size[0] + (r.size[1] - r.size[0]) * (((loc.wght ?? 100) - 100) / 800),
+    skew: -(loc.slnt ?? 0),
+    round: (loc.ROND ?? 0) / 100,
+  }
+}
+
+// Everything the Python export needs. Each master is the same modules with different axis values.
+export function exportPayload(src: Source, fit: Fitted, s: FitSettings, r: AxisRanges, n: number) {
   const os2 = src.font.tables.os2
+  const axes = [
+    { tag: 'wght', name: 'Weight', min: 100, default: 400, max: 900 },
+    { tag: 'wdth', name: 'Width', min: 100, default: 100, max: Math.round(100 * r.widthMax) },
+    { tag: 'slnt', name: 'Slant', min: -r.slantMax, default: 0, max: 0 },
+    { tag: 'ROND', name: 'Roundness', min: 0, default: 0, max: Math.round(100 * r.roundMax) },
+  ].filter((a) => a.max > a.min)
+  // A master at every combination of each axis's min, default and max, so axes that interact stay exact there.
+  let locs: Loc[] = [{}]
+  for (const a of axes) locs = locs.flatMap((l) => [...new Set([a.min, a.default, a.max])].map((v) => ({ ...l, [a.tag]: v })))
+  const master = (loc: Loc) => {
+    const ax = axesAt(s, r, loc)
+    return {
+      loc,
+      glyphs: Object.fromEntries(fit.glyphs.map((g) => [g.name, buildGlyph(g, ax)])),
+      kern: fit.kern.map(([a, b, v]) => [a, b, v * ax.cellW]),
+    }
+  }
+  const defaults = Object.fromEntries(axes.map((a) => [a.tag, a.default]))
+  const at = (extra: Loc) => ({ ...defaults, ...extra })
+  const wghtNames: [number, string][] = [[100, 'Thin'], [400, 'Regular'], [700, 'Bold'], [900, 'Black']]
+  // Style names only for Weight and Width: family plus all style names must stay within 31 characters.
+  const stat = axes.map((a) => ({
+    tag: a.tag,
+    name: a.name,
+    values:
+      a.tag === 'wght' ? wghtNames.map(([value, name]) => ({ value, name, flags: value === 400 ? 2 : 0 }))
+      : a.tag === 'wdth' ? [{ value: 100, name: 'Normal', flags: 2 }, { value: a.max, name: 'Wide', flags: 0 }]
+      : [{ value: a.default, name: a.tag === 'slnt' ? 'Upright' : 'Sharp', flags: 2 }],
+  }))
   return {
     family: `Systype Test ${n}`,
     version: n,
@@ -82,10 +131,10 @@ export function exportPayload(src: Source, fit: Fitted, masters: { wdth: number;
     license: src.name('license'),
     licenseURL: src.name('licenseURL'),
     glyphs: fit.glyphs.map((x) => ({ name: x.name, unicode: x.unicode })),
-    masters: masters.map(({ wdth, grid }) => ({
-      wdth,
-      glyphs: Object.fromEntries(fit.glyphs.map((x) => [x.name, buildGlyph(x, grid)])),
-      kern: fit.kern.map(([a, b, v]) => [a, b, v * grid.col]),
-    })),
+    axes,
+    masters: locs.map((l) => master(at(l))),
+    static: master(at({ wght: 400 })), // the static OTF is the Regular
+    instances: wghtNames.map(([v, name]) => ({ name, loc: at({ wght: v }) })),
+    stat,
   }
 }

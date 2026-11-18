@@ -1,50 +1,59 @@
 # Step 0 results
 
 Test font: IBM Plex Sans Regular 1.1.0 (OFL, cubic CFF outlines, 1000 units per em).
-Tested 18 Nov 2026 on a Mac with Chrome (Claude browser pane), Node 26.13.1, Pyodide 314.0.8, fontTools 4.62.1.
+Tested 18 Nov 2026 on a Mac: Chrome (Claude browser pane), Illustrator 2027, Figma desktop, Node 26.13.1, Pyodide 314.0.8, fontTools 4.62.1.
 
-## 1. Fit 10 letters to a grid, change the grid, see them rebuild: PASS
+This branch (`step-0-modules`) uses the module model. The earlier point-snapping results are on `step-0-grid-fit`.
 
-- Every point snaps to the nearest grid point, curve handles included.
-- Points added: when a snapped curve strays more than half a cell from the source at its middle, the source curve is split in two (up to 3 times) and each half snapped.
-- Points removed: zero-length segments, curves whose handles land on their ends (become lines), contours with no area left.
-- Changing column, row or skew rebuilds every letter from the stored grid positions without refitting. Checked at column 35, row 60, skew 12 after fitting at 50 × 50.
-- Fitting all 95 characters takes 6 to 8 ms.
-- Unit tests: `src/grid.test.ts`, 5 passing.
+## 0. Touching and overlapping modules in variable fonts: PASS
 
-Open: at large row spacing the letters grow taller than the preview canvas and get cut off at the top. Display only.
+Probe fonts, one contour per module, Weight = module size (Bold = exactly touching, Black = 10 % overlap), in variable TrueType, variable TrueType with Apple's overlap flag, and CFF2.
 
-## 2. Export through Pyodide + fontTools, install in Illustrator and Figma: export PASS, install NOT TESTED YET
+| App | Exactly touching | Overlapping |
+| --- | --- | --- |
+| Illustrator: export at 1×, 3.33×, 4×, odd size and position, after Create Outlines, on screen | solid, 0 light pixels, all three formats | solid |
+| Figma: on screen at 300 px and 37 px | clean, TT and CFF2 | clean, TT |
+| Chrome: canvas at 17 to 333 px | clean, apart from one faint CFF2 seam at 41 px (13/255) | clean |
 
-- Static OTF (CFF), 97 glyphs: `.notdef` first, 95 Basic Latin characters, U+00A0.
-- Kerning: 480 source pairs inside the character set, snapped to whole columns, written as GPOS through feaLib.
-- Names: family "Systype Test N", version "Version 1.00N", source copyright and OFL license kept, Mac name entries left out. N goes up on every export.
-- Chrome loads all three files as web fonts and sets text with them.
-- Font Bakery 1.1.0, Universal profile: 0 FAIL, 0 WARN on the static OTF.
+The overlap flag made no difference. Modules may touch at 100 % and overlap slightly.
 
-Still to do: install in Illustrator and Figma desktop (Ismael).
+## 1. Fit to modules, change the grid, move the axes: PASS
 
-## 3. Both variable formats: export PASS, install NOT TESTED YET
+- Coverage per cell: 16 × 16 samples per cell, nonzero fill rule. Cells at or above the threshold get a square.
+- Smoothing: an empty cell where two filled neighbours meet at one corner, with coverage at least half the threshold, gets a triangle or quarter circle there.
+- Fit time for all 95 characters: 30 to 100 ms in Chrome (1,465 modules at 90-unit cells, 4,533 at 50-unit cells).
+- Cell size, threshold and smoothing refit. Weight, Width, Slant and Roundness only move modules.
+- Clicking a cell adds or removes its module; a second click undoes it.
+- Unit tests: `src/raster.test.ts` (4), `src/modules.test.ts` (9).
 
-- Width axis, wdth 100 (default, the fitted grid) to 150 (column spacing × 1.5). Both masters come from the same grid positions.
-- Variable TrueType: cubic to quadratic with `cu2qu.curves_to_quadratic` on all masters at once, so the masters keep the same points. Smart dropout `prep` and `gasp` added.
-- Variable CFF2: `varLib.build` converts the CFF masters to CFF2.
-- STAT table with a Regular (elidable) and an Extra Expanded value; fvar named instance "Regular".
-- Font Bakery Universal: 0 FAIL on both. 1 WARN on both: no `avar` table. Fine for a straight Width axis; revisit when axes get uneven steps.
+## 2. Export through Pyodide + fontTools: export PASS, install of exported fonts NOT TESTED YET
 
-Still to do: install both in Illustrator and Figma desktop (Ismael). Default stays variable TrueType until that's done.
+- Static OTF: the Regular (Weight 400), 97 glyphs, kerning through feaLib, OFL names. Font Bakery Universal: 0 FAIL, 0 WARN.
+- Chrome loads all three exported files and sets text with them.
+- Found: CFF masters must be built with `getCharString(optimize=False)`. Otherwise a corner curve that collapses at roundness 0 is stored as a line in one master and a curve in another, and varLib refuses to merge them.
 
-## 4. Export time for all 95 characters in the browser: PASS
+Still to do: install an export in Illustrator and Figma (the probe fonts were installed and tested, see 0).
+
+## 3. Both variable formats: TrueType PASS, CFF2 FAIL (OTS)
+
+- Four axes: `wght` 100 to 900 (default 400), `wdth` 100 to 150, `slnt` -12 to 0, `ROND` 0 to 100. A master at every combination of each axis's min, default and max: 24 masters, so axes that interact (all of them interact with module size) are exact at those points.
+- Variable TrueType: Font Bakery 0 FAIL. WARNs reviewed: large font (1.2 MB); no `avar`; overlapping path segments (expected, touching modules); interpolation "contour order differs" in `at` and `.notdef` (false alarm: identical square modules matched in a different order).
+- Variable CFF2: Font Bakery FAIL from OTS (the sanitizer browsers use): the charstrings of `at` (70.9 KB) and `W` (67.5 KB) are over 64 KB. With 12 or 16 masters it passed. Chrome still loaded this file. Fix later if CFF2 is wanted: fewer masters, or subroutines. Font Bakery's `duplexed_axis_reflow` check crashes on CFF2 (it expects a `gvar` table): a Font Bakery bug.
+- Default stays variable TrueType.
+
+## 4. Export time for all 95 characters in the browser: PASS, but slow
+
+50-unit cells, 4,533 modules, 24 masters:
 
 | | ms |
 | --- | --- |
-| Load Pyodide + fontTools (first export; cached by the browser after an earlier run) | 1,200 to 1,300 |
-| Static OTF | 27 to 47 |
-| Variable TrueType | 103 to 116 |
-| Variable CFF2 | 90 to 102 |
-| All three, after the first export | about 230 |
+| Load Pyodide + fontTools (cached) | 1,166 |
+| Static OTF | 301 |
+| Variable TrueType | 17,014 |
+| Variable CFF2 | 12,107 |
+| All three | 32,665 |
 
-First visit download size from the CDN: about 13.4 MB (Pyodide core 12.3 MB, fontTools 1.2 MB). A first visit on a slow connection will take longer than the 1.3 s above. Not measured with an empty cache.
+The same export in local Python takes about 13 s. The payload sent to the worker is about 45 MB of JSON, since every master carries full outlines. Ways to cut it later: send modules and axis values and build the masters in Python, or export only the axes the user turns on.
 
 ## 5. File downloads inside a Framer Embed: NOT TESTED YET
 

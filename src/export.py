@@ -60,7 +60,7 @@ def tt_glyphs(contours_per_master):
     return glyphs
 
 
-def build(d, m, ttf, tt_outlines=None):
+def build(d, m, ttf, tt_outlines=None, optimize=True):
     family = d["family"]
     ps = family.replace(" ", "") + "-Regular"
     version = f"Version 1.{d['version']:03d}"
@@ -78,7 +78,9 @@ def build(d, m, ttf, tt_outlines=None):
         for n in order:
             pen = T2CharStringPen(glyphs[n]["adv"], None)
             draw(pen, glyphs[n]["contours"])
-            charstrings[n] = pen.getCharString()
+            # Variable masters need optimize=False: otherwise a collapsed corner curve is stored as a line
+            # in one master and stays a curve in another, and varLib can't merge them.
+            charstrings[n] = pen.getCharString(optimize=optimize)
             bp = BoundsPen(None)
             draw(bp, glyphs[n]["contours"])
             lsb[n] = bp.bounds[0] if bp.bounds else 0
@@ -115,23 +117,23 @@ def build(d, m, ttf, tt_outlines=None):
 
 def variable(d, fonts):
     ds = DesignSpaceDocument()
-    a = AxisDescriptor()
-    a.tag, a.name = "wdth", "Width"
-    ws = [m["wdth"] for m in d["masters"]]
-    a.minimum, a.default, a.maximum = min(ws), ws[0], max(ws)
-    ds.addAxis(a)
+    names = {}
+    for ax in d["axes"]:
+        a = AxisDescriptor()
+        a.tag, a.name, a.minimum, a.default, a.maximum = ax["tag"], ax["name"], ax["min"], ax["default"], ax["max"]
+        ds.addAxis(a)
+        names[ax["tag"]] = ax["name"]
+    loc = lambda l: {names[t]: v for t, v in l.items() if t in names}
     for i, (m, f) in enumerate(zip(d["masters"], fonts)):
         s = SourceDescriptor()
-        s.name, s.font, s.location = f"m{i}", f, {"Width": m["wdth"]}
+        s.name, s.font, s.location = f"m{i}", f, loc(m["loc"])
         ds.addSource(s)
-    i = InstanceDescriptor()
-    i.familyName, i.styleName, i.location = d["family"], "Regular", {"Width": a.default}
-    ds.addInstance(i)
+    for inst in d["instances"]:
+        i = InstanceDescriptor()
+        i.familyName, i.styleName, i.location = d["family"], inst["name"], loc(inst["loc"])
+        ds.addInstance(i)
     vf = varLib.build(ds)[0]
-    names = {75: "Condensed", 87.5: "Semi Condensed", 112.5: "Semi Expanded", 125: "Expanded", 150: "Extra Expanded"}
-    values = [{"value": w, "name": names.get(w, f"Width {w}")} for w in ws if w != a.default]
-    values.append({"value": a.default, "name": "Regular", "flags": 0x2})  # 0x2: elidable
-    buildStatTable(vf, [{"tag": "wdth", "name": "Width", "values": values}], macNames=False)
+    buildStatTable(vf, d["stat"], macNames=False)
     return vf
 
 
@@ -153,7 +155,7 @@ def export_files(inp, out):
     ms = {}
 
     t = time.perf_counter()
-    build(d, d["masters"][0], False).save(f"{out}/{stem}-Regular.otf")
+    build(d, d["static"], False).save(f"{out}/{stem}-Regular.otf")
     ms["static_otf"] = (time.perf_counter() - t) * 1000
 
     t = time.perf_counter()
@@ -166,7 +168,7 @@ def export_files(inp, out):
     ms["vf_ttf"] = (time.perf_counter() - t) * 1000
 
     t = time.perf_counter()
-    variable(d, [build(d, m, False) for m in d["masters"]]).save(f"{out}/{stem}-VF-CFF2.otf")
+    variable(d, [build(d, m, False, optimize=False) for m in d["masters"]]).save(f"{out}/{stem}-VF-CFF2.otf")
     ms["vf_cff2"] = (time.perf_counter() - t) * 1000
     return json.dumps(ms)
 
